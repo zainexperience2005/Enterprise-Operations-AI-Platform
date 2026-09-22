@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
+import os
 
 class Settings(BaseSettings):
     app_name: str = "Enterprise Operations AI Platform"
@@ -26,3 +26,12 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+os.environ["OPENAI_API_KEY"] = settings.openai_api_key
+
+os.environ["LANGSMITH_TRACING"] = str(
+    settings.langsmith_tracing
+).lower()
+
+os.environ["LANGSMITH_API_KEY"] = settings.langsmith_api_key
+
+os.environ["LANGSMITH_PROJECT"] = settings.langsmith_project
