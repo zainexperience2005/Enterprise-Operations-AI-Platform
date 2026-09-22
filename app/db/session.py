@@ -8,7 +8,10 @@ engine = create_engine(
     settings.database_url,
     pool_pre_ping=True,
 )
-
+readonly_engine = create_engine(
+    settings.readonly_database_url,
+    pool_pre_ping=True,
+)
 
 SessionLocal = sessionmaker(
     bind=engine,

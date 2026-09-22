@@ -8,7 +8,7 @@ from .models import (
     AuditEvent
 )
 from .base import Base
-from .session import SessionLocal, engine
+from .session import SessionLocal, engine, readonly_engine
 
 __all__ = [
     "Customer",
@@ -20,5 +20,6 @@ __all__ = [
     "AuditEvent",
     "SessionLocal",
     "engine",
+    "readonly_engine",
     "Base"
 ]

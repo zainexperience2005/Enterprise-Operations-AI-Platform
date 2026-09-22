@@ -23,3 +23,12 @@ class SupportTicketLookupInput(BaseModel):
     ticket_number: str = Field(
         description="Unique support ticket number, for example TICK-4001"
     )
+
+
+class SQLQueryInput(BaseModel):
+    query: str = Field(
+        description=(
+            "A single PostgreSQL SELECT query used "
+            "to investigate enterprise data."
+        )
+    )

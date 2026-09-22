@@ -15,6 +15,7 @@ include = ["app*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+norecursedirs = [".venv", ".*", "dist", "build"]
 
 [tool.ruff]
 line-length = 88
