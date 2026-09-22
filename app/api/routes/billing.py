@@ -1,0 +1,48 @@
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.orm import Session, selectinload
+
+from app.api.dependencies import get_db
+from app.db.models import Invoice
+
+
+router = APIRouter(
+    prefix="/billing",
+    tags=["billing"],
+)
+
+
+@router.get("/invoices/{invoice_number}")
+def get_invoice(
+    invoice_number: str,
+    db: Session = Depends(get_db),
+):
+    statement = (
+        select(Invoice)
+        .options(selectinload(Invoice.payments))
+        .where(Invoice.invoice_number == invoice_number)
+    )
+
+    invoice = db.scalar(statement)
+
+    if invoice is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Invoice not found",
+        )
+
+    return {
+        "invoice_number": invoice.invoice_number,
+        "customer_id": invoice.customer_id,
+        "order_id": invoice.order_id,
+        "amount": float(invoice.amount),
+        "status": invoice.status,
+        "payments": [
+            {
+                "payment_reference": payment.payment_reference,
+                "amount": float(payment.amount),
+                "status": payment.status,
+            }
+            for payment in invoice.payments
+        ],
+    }
