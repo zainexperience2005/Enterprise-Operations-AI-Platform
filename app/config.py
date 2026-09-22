@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     redis_url: str
     qdrant_url: str
 
+    enterprise_api_url: str = "http://127.0.0.1:8000"
+
     openai_api_key: str
 
     langsmith_tracing: bool = True
