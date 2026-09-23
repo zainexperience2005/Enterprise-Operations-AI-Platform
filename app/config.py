@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     redis_url: str
     qdrant_url: str
 
+    http_timeout_seconds: float = 5.0
+    http_max_retries: int = 2
+
     enterprise_api_url: str = "http://127.0.0.1:8000"
     openai_api_key: str
 

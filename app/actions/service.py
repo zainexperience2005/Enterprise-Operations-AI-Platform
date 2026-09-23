@@ -88,7 +88,7 @@ def execute_refund(
     # Cache successful execution in Redis (86400 seconds = 24 hours)
     if r is not None:
         try:
-            r.setex(redis_key, 86400, json.dumps(result))
+            r.set(redis_key, json.dumps(result), ex=86400)
         except Exception:
             pass
 
