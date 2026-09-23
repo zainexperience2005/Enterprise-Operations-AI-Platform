@@ -239,9 +239,19 @@ class Investigation(Base):
         nullable=True,
     )
 
+    thread_id: Mapped[str | None] = mapped_column(
+        String,
+        nullable=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,
+    )
+
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
     )
 
 class AuditEvent(Base):

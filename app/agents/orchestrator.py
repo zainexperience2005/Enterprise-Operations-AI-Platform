@@ -434,8 +434,17 @@ builder.add_conditional_edges(
 # Terminal edge
 builder.add_edge("resolution", END)
 
+def create_investigation_graph(
+    checkpointer=None,
+):
+    return builder.compile(
+        checkpointer=checkpointer
+    )
+
 # Compiled graph ready for execution
-investigation_graph = builder.compile()
+investigation_graph = (
+    create_investigation_graph()
+)
 
 
 def run_investigation(
