@@ -13,11 +13,30 @@ def split_documents(
         chunk_overlap=120,
     )
 
-    chunks = splitter.split_documents(
-        documents
-    )
+    all_chunks = []
 
-    for index, chunk in enumerate(chunks):
-        chunk.metadata["chunk_id"] = index
+    for document in documents:
 
-    return chunks
+        chunks = splitter.split_documents(
+            [document]
+        )
+
+        source = document.metadata.get(
+            "source",
+            "unknown",
+        )
+
+        source_name = source.rsplit(
+            ".",
+            1,
+        )[0]
+
+        for index, chunk in enumerate(chunks):
+
+            chunk.metadata["chunk_id"] = (
+                f"{source_name}-{index:04d}"
+            )
+
+            all_chunks.append(chunk)
+
+    return all_chunks

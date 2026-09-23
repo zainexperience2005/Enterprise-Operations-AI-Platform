@@ -13,20 +13,40 @@ def retrieve_policy_documents(
 
     vector_store = get_vector_store()
 
-    documents = vector_store.similarity_search(
-        query=query,
-        k=top_k,
+    results = (
+        vector_store.similarity_search_with_score(
+            query=query,
+            k=top_k,
+        )
     )
 
-    return [
-        {
-            "content": document.page_content,
-            "source": document.metadata.get(
-                "source"
-            ),
-            "chunk_id": document.metadata.get(
-                "chunk_id"
-            ),
-        }
-        for document in documents
-    ]
+    retrieved = []
+
+    for document, score in results:
+
+        retrieved.append(
+            {
+                "content": document.page_content,
+                "source": document.metadata.get(
+                    "source"
+                ),
+                "policy_id": document.metadata.get(
+                    "policy_id"
+                ),
+                "title": document.metadata.get(
+                    "title"
+                ),
+                "version": document.metadata.get(
+                    "version"
+                ),
+                "category": document.metadata.get(
+                    "category"
+                ),
+                "chunk_id": document.metadata.get(
+                    "chunk_id"
+                ),
+                "score": float(score),
+            }
+        )
+
+    return retrieved

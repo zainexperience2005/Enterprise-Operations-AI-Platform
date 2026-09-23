@@ -7,8 +7,7 @@ from app.rag.retriever import (
 
 results = retrieve_policy_documents(
     (
-        "What should happen when an invoice "
-        "is higher than the approved order total?"
+        "How many vacation days do software engineers receive?"
     )
 )
 

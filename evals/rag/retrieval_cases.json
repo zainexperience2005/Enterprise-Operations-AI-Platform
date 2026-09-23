@@ -1,0 +1,37 @@
+[
+    {
+        "case_id": "RAG-001",
+        "query": "What happens if an invoice is higher than the approved order total?",
+        "expected_sources": [
+            "billing_policy.md"
+        ]
+    },
+    {
+        "case_id": "RAG-002",
+        "query": "When does a refund require human approval?",
+        "expected_sources": [
+            "refund_policy.md"
+        ]
+    },
+    {
+        "case_id": "RAG-003",
+        "query": "Can support promise a refund before eligibility is confirmed?",
+        "expected_sources": [
+            "support_sop.md"
+        ]
+    },
+    {
+        "case_id": "RAG-004",
+        "query": "How should post-order adjustments be recorded?",
+        "expected_sources": [
+            "order_policy.md"
+        ]
+    },
+    {
+        "case_id": "RAG-005",
+        "query": "What records should be checked during a billing discrepancy investigation?",
+        "expected_sources": [
+            "billing_policy.md"
+        ]
+    }
+]

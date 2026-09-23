@@ -1,4 +1,4 @@
---- Policy Metadata ---
+---
 policy_id: REF-001
 title: Customer Refund Policy
 version: "1.0"

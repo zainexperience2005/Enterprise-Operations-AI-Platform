@@ -1,4 +1,4 @@
---- SOP Metadata ---
+---
 sop_id: SUP-001
 title: Customer Support Billing SOP
 version: "1.0"

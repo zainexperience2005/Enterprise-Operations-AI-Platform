@@ -31,6 +31,15 @@ Rules:
 5. Clearly state when relevant policy evidence cannot be found.
 6. Do not execute or claim to execute business actions.
 7. Return concise policy evidence useful to the resolution agent.
+When reporting policy evidence, use this citation format:
+
+[policy_id | source | chunk_id]
+
+Example:
+
+[REF-001 | refund_policy.md | refund_policy-0000]
+
+Every important policy claim must have a citation.
 """
 
 

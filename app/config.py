@@ -8,6 +8,7 @@ class Settings(BaseSettings):
 
     database_url: str
     readonly_database_url: str
+    checkpoint_database_url: str
     redis_url: str
     qdrant_url: str
 
