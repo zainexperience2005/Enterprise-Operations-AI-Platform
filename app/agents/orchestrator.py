@@ -16,6 +16,7 @@ from app.agents.api_agent import run_api_specialist
 from app.agents.investigation_state import InvestigationState
 from app.agents.planner.planner import create_investigation_plan
 from app.agents.sql_agent import run_sql_specialist
+from app.agents.rag_agent import run_rag_specialist
 
 # Safety ceiling to prevent unbounded execution loops
 MAX_INVESTIGATION_STEPS = 15
@@ -176,7 +177,7 @@ def route_next_step(
 
     step = plan.steps[current_step]
 
-    if step.specialist in ("sql", "api"):
+    if step.specialist in ("sql", "api", "rag"):
         return step.specialist
 
     return "resolution"
@@ -280,6 +281,81 @@ def sql_specialist_node(
     }
 
 
+def rag_specialist_node(
+    state: InvestigationState,
+) -> dict[str, Any]:
+
+    plan = state.get("plan")
+    current_step = state.get(
+        "current_step",
+        0,
+    )
+
+    evidence = list(
+        state.get("evidence", [])
+    )
+
+    errors = list(
+        state.get("errors", [])
+    )
+
+    if not plan or current_step >= len(plan.steps):
+        return {
+            "current_step": current_step,
+            "total_iterations": state.get(
+                "total_iterations",
+                0,
+            ),
+        }
+
+    step = plan.steps[current_step]
+
+    try:
+        context = build_specialist_context(
+            state,
+            step.instruction,
+        )
+
+        result = run_rag_specialist(
+            context
+        )
+
+    except Exception as exc:
+        result = (
+            "Error during RAG specialist "
+            f"execution: {str(exc)}"
+        )
+
+        errors.append(
+            {
+                "step_id": step.step_id,
+                "specialist": "rag",
+                "error": str(exc),
+            }
+        )
+
+    evidence.append(
+        {
+            "step_id": step.step_id,
+            "specialist": "rag",
+            "instruction": step.instruction,
+            "result": result,
+        }
+    )
+
+    return {
+        "evidence": evidence,
+        "errors": errors,
+        "current_step": current_step + 1,
+        "total_iterations": (
+            state.get(
+                "total_iterations",
+                0,
+            )
+            + 1
+        ),
+    }
+
 def resolution_node(
     state: InvestigationState,
 ) -> dict[str, Any]:
@@ -331,7 +407,10 @@ builder.add_node("planner", planner_node)
 builder.add_node("api", api_specialist_node)
 builder.add_node("sql", sql_specialist_node)
 builder.add_node("resolution", resolution_node)
-
+builder.add_node(
+    "rag",
+    rag_specialist_node,
+)
 # Entry point
 builder.add_edge(START, "planner")
 
@@ -339,6 +418,7 @@ builder.add_edge(START, "planner")
 STEP_ROUTING = {
     "api": "api",
     "sql": "sql",
+    "rag": "rag",
     "resolution": "resolution",
 }
 
@@ -346,7 +426,11 @@ STEP_ROUTING = {
 builder.add_conditional_edges("planner", route_next_step, STEP_ROUTING)
 builder.add_conditional_edges("api", route_next_step, STEP_ROUTING)
 builder.add_conditional_edges("sql", route_next_step, STEP_ROUTING)
-
+builder.add_conditional_edges(
+    "rag",
+    route_next_step,
+    STEP_ROUTING,
+)
 # Terminal edge
 builder.add_edge("resolution", END)
 

@@ -5,6 +5,7 @@ from .schemas import (
     InvoiceLookupInput,
     SupportTicketLookupInput,
     SQLQueryInput,
+    PolicySearchInput,
 )
 from .sql_tools import (
     inspect_database_schema,
@@ -21,6 +22,7 @@ __all__ = [
     "InvoiceLookupInput",
     "SupportTicketLookupInput",
     "SQLQueryInput",
+    "PolicySearchInput",
     # Tools
     "inspect_database_schema",
     "execute_sql_query",

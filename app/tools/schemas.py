@@ -32,3 +32,13 @@ class SQLQueryInput(BaseModel):
             "to investigate enterprise data."
         )
     )
+
+class PolicySearchInput(BaseModel):
+    query: str = Field(
+        min_length=3,
+        max_length=500,
+        description=(
+            "Focused semantic search query for enterprise "
+            "policies, procedures and SOPs."
+        ),
+    )

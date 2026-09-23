@@ -20,9 +20,11 @@ def main():
     result = investigation_graph.invoke(
         {
             "request": (
-                "Customer reported an incorrect charge "
-                "in support ticket TICK-4001. "
-                "Investigate what happened."
+                "Customer reported an incorrect charge in "
+                "support ticket TICK-4001. Investigate what "
+                "happened, determine whether company policy "
+                "supports corrective action, and identify "
+                "whether approval would be required."
             )
         },
         config={

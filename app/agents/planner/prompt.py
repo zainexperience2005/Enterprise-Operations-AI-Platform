@@ -21,6 +21,10 @@ Available specialists:
 2. sql
    Investigates structured relationships and performs
    read-only analysis across PostgreSQL data.
+3. rag
+   Retrieves enterprise policies, procedures and SOPs.
+   Use this specialist when the investigation requires
+   policy, eligibility, approval or procedural evidence.
 
 Rules:
 

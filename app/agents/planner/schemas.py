@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 SpecialistType = Literal[
     "sql",
     "api",
+    "rag"
 ]
 
 
