@@ -9,7 +9,7 @@ from .planner.prompt import PLANNER_SYSTEM_PROMPT
 from .investigation_state import InvestigationState
 from .orchestrator import investigation_graph, run_investigation, create_investigation_graph
 from .rag_agent import rag_agent_graph, run_rag_specialist
-
+from .actions_proposer import propose_action
 __all__ = [
     "AgentState",
     "model_with_tools",
@@ -26,4 +26,5 @@ __all__ = [
     "rag_agent_graph",
     "run_rag_specialist",
     "create_investigation_graph",
+    "propose_action",
 ]

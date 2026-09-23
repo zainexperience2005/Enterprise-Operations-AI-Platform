@@ -13,14 +13,14 @@ An autonomous, multi-agent AI operations platform that investigates complex, cro
 
 ## Architecture Overview
 
-The platform uses a stateful, directed multi-agent graph where operational investigations are decoupled into memory retrieval, dynamic planning, specialized execution, policy compliance verification, and evidence-based synthesis.
+The platform uses a stateful, directed multi-agent graph where operational investigations are decoupled into memory retrieval, dynamic planning, specialized execution, policy compliance verification, evidence-based synthesis, controlled action proposal, policy gating, human-in-the-loop approval, and safe idempotent execution.
 
 ```mermaid
 graph TD
     User([Business User / Support Ticket]) --> Runner[/FastAPI & Persistent Runner/]
     Runner --> Orchestrator[Investigation Orchestrator]
 
-    subgraph "Investigation Workflow (LangGraph)"
+    subgraph "Read Plane: Investigation Workflow (LangGraph)"
         Orchestrator --> MemLoader[1. Memory Loader Node]
         MemLoader -->|Load Historical Context| DBMem[(PostgreSQL<br/>investigation_memories)]
         MemLoader --> Planner[2. Planner Agent]
@@ -43,22 +43,35 @@ graph TD
         Accumulator --> MoreSteps{More Steps?}
         MoreSteps -->|Yes| RouteCheck
         MoreSteps -->|Done / Max Iterations| Resolution[3. Resolution Analyst]
-
-        Resolution --> MemWriter[4. Memory Writer Node]
-        MemWriter -->|Persist Resolution| DBMem
     end
 
-    subgraph "State Persistence & Resumption"
-        Orchestrator -.-> Checkpointer[LangGraph PostgresSaver<br/>Thread Checkpoints]
-        Checkpointer -.-> CheckpointDB[(PostgreSQL Checkpoint Storage)]
+    subgraph "Action Plane: Governance, Policy & Human-in-the-Loop"
+        Resolution --> ActionProposer[4. Action Proposer Agent]
+        ActionProposer -->|Structured Proposal| PolicyGate[5. Policy Gate Node]
+        
+        PolicyGate -->|Approval Required| ApprovalNode[6. Approval Node<br/>LangGraph interrupt]
+        PolicyGate -->|Auto-Approved| ExecutorNode[7. Safe Executor Node]
+        PolicyGate -->|No Action / Blocked| MemWriter[8. Memory Writer Node]
+
+        ApprovalNode -.->|Thread Pauses / Checkpoint| CheckpointDB[(PostgreSQL Checkpoint Storage)]
+        HumanReviewer([Human Approver]) -->|Command: resume| ApprovalNode
+        
+        ApprovalNode -->|Approved| ExecutorNode
+        ApprovalNode -->|Rejected| MemWriter
+
+        ExecutorNode -->|Idempotency Check| RedisCache[(Redis Idempotency Store)]
+        ExecutorNode -->|Execute Mutation| BillingAPI[Enterprise Billing Service<br/>POST /billing/refunds]
+        ExecutorNode -->|Audit Event| AuditLog[(PostgreSQL<br/>audit_events)]
+        ExecutorNode --> MemWriter
     end
 
+    MemWriter -->|Persist Resolution| DBMem
     MemWriter --> Output([Final Incident Resolution Report])
 ```
 
 ---
 
-## Detailed Investigation Flow
+## Detailed Investigation & Action Flow
 
 1. **Memory Retrieval (`memory_loader`)**:
    - Queries `investigation_memories` in PostgreSQL for past resolutions and operator notes associated with the `investigation_id`.
@@ -68,7 +81,7 @@ graph TD
    - The Planner Agent (`gpt-5.1` with Pydantic structured output) deconstructs the ticket or incident query into an ordered sequence of minimal `PlanStep`s.
    - Evaluates past memory and delegates tasks to the optimal specialist: `api`, `sql`, or `rag`.
 
-3. **Dynamic Step Execution & Accumulation**:
+3. **Dynamic Step Execution & Accumulation (Read Plane)**:
    - `route_next_step` inspects the plan's `current_step` and routes dynamically to:
      - **API Specialist**: Point lookups of customer accounts, orders, invoice states, and support ticket metadata.
      - **SQL Specialist**: Complex relational joins, aggregate reconciliations, and numerical discrepancy checks with AST-level read-only verification.
@@ -77,10 +90,30 @@ graph TD
 
 4. **Resolution Synthesis (`resolution`)**:
    - The Resolution Analyst synthesizes all gathered evidence and recorded errors into an actionable report.
-   - Distinguishes verified facts from operational inferences, quantifies financial discrepancies, and flags approval thresholds.
+   - Distinguishes verified facts from operational inferences, quantifies financial discrepancies, and flags policy criteria.
    - Enforces a strict non-mutation guarantee: never hallucinates or performs destructive actions.
 
-5. **Memory Persistence (`memory_writer`)**:
+5. **Action Proposal (`action_proposal`)**:
+   - Evaluates the verified evidence and resolution to determine if an action is warranted.
+   - If warranted, produces a strictly typed `ProposedAction` (e.g., `refund` for `$200.00` on `INV-2001`).
+   - If evidence is incomplete or speculative, models absence cleanly (`should_act: false, action: null`).
+
+6. **Deterministic Policy Gate (`policy_gate`)**:
+   - Python-enforced rule engine evaluates the proposal against organizational thresholds (e.g., `REFUND_APPROVAL_THRESHOLD = $100.00`).
+   - Determines whether the action is permitted and whether human authorization is required.
+
+7. **Human-in-the-Loop Approval (`approval`)**:
+   - For actions exceeding threshold, LangGraph pauses execution via `interrupt()`.
+   - The state is persisted in PostgreSQL checkpoints.
+   - Resumed asynchronously via `Command(resume={"approved": True, "approved_by": "..."})` upon authorized human sign-off.
+
+8. **Safe Execution & Idempotency (`executor`)**:
+   - Applies defense-in-depth authorization validation before executing mutations.
+   - Uses deterministic idempotency keys (`refund:{investigation_id}:{invoice}:{amount}`) stored in Redis to guarantee zero duplicate refunds.
+   - Dispatches mutation to `POST /billing/refunds`.
+   - Records tamper-evident audit logs in `audit_events`.
+
+9. **Memory Persistence (`memory_writer`)**:
    - Automatically commits the finalized resolution to `investigation_memories` for future multi-turn inquiries or audits.
 
 ---
@@ -88,7 +121,12 @@ graph TD
 ## Key Features
 
 - **Multi-Agent Orchestration**: Stateful graph execution powered by LangGraph with conditional routing and cycle controls (`MAX_INVESTIGATION_STEPS`).
-- **Persistent State & Resumption**: Full session checkpointing via `PostgresSaver`, enabling thread-based replay, paused workflows, and human-in-the-loop approvals.
+- **Human-in-the-Loop Governance**: Native LangGraph `interrupt` pause/resume mechanism for high-impact financial actions.
+- **Strict Read Plane vs Action Plane Separation**: Investigation specialists remain strictly read-only; mutations are restricted exclusively to the post-approval Executor.
+- **Deterministic Policy Enforcement**: Python rules validate amounts and thresholds; LLMs never have unilateral execution authority.
+- **Redis-Backed Idempotency**: Prevents double-charging or duplicate refunds across retries or service restarts.
+- **Complete Audit Trail**: Structured event logging (`ACTION_PROPOSED`, `POLICY_CHECKED`, `APPROVAL_REQUESTED`, `ACTION_APPROVED`, `ACTION_EXECUTED`) in PostgreSQL.
+- **Persistent State & Resumption**: Full session checkpointing via `PostgresSaver`, enabling thread-based replay and asynchronous approval queues.
 - **Episodic Long-Term Memory**: Database-backed memory storage (`InvestigationMemory`) to recall previous investigation conclusions for related tickets.
 - **AST-Validated Safe SQL**: `sqlglot` validates every SQL query, strictly prohibiting `INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER`, and `TRUNCATE`.
 - **Policy RAG with Standardized Citations**: Qdrant vector retrieval over chunked markdown policies with structured frontmatter metadata (`[policy_id | source | chunk_id]`).

@@ -1,3 +1,4 @@
+from app.actions import ProposedAction
 from typing import Any, TypedDict
 
 
@@ -21,3 +22,11 @@ class InvestigationState(TypedDict, total=False):
     # Memory
     memory_context: list[dict[str, Any]]
     investigation_id: str
+
+    proposed_action: ProposedAction | None
+
+    approval_required: bool
+
+    approval_status: str | None
+
+    action_result: dict[str, Any] | None

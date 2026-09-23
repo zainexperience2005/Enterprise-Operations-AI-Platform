@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -45,4 +46,38 @@ def get_invoice(
             }
             for payment in invoice.payments
         ],
+    }
+
+
+class RefundRequest(BaseModel):
+    invoice_number: str
+    amount: float
+    idempotency_key: str
+
+
+@router.post("/refunds")
+def create_refund(
+    request: RefundRequest,
+    db: Session = Depends(get_db),
+):
+    statement = select(Invoice).where(
+        Invoice.invoice_number == request.invoice_number
+    )
+    invoice = db.scalar(statement)
+
+    if invoice is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Invoice not found",
+        )
+
+    # In our mock enterprise billing system, we generate a confirmation ID
+    refund_id = f"REFUND-{invoice.id}-{int(request.amount)}"
+
+    return {
+        "refund_id": refund_id,
+        "invoice_number": invoice.invoice_number,
+        "amount": request.amount,
+        "status": "completed",
+        "idempotency_key": request.idempotency_key,
     }

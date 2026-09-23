@@ -99,7 +99,13 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import interrupt
 
+from app.actions import (
+    evaluate_action_policy,
+    execute_action,
+)
+from app.agents.actions_proposer import propose_action
 from app.agents.api_agent import run_api_specialist
 from app.agents.investigation_state import InvestigationState
 from app.agents.planner.planner import create_investigation_plan
@@ -109,6 +115,7 @@ from app.memory.service import (
     load_memory_context,
     save_resolution_memory,
 )
+from app.security.audit import record_audit_event
 
 # ----------------------------------------------------------------------------
 # System Configuration & Safety Guardrails
@@ -690,6 +697,211 @@ Errors / inaccessible sources during investigation:
     }
 
 
+def action_proposal_node(
+    state: InvestigationState,
+) -> dict[str, Any]:
+    """Graph Node: Evaluates evidence & resolution to propose a structured business action."""
+    evidence = _format_evidence_for_prompt(
+        state.get("evidence", [])
+    )
+    investigation_id = state.get("investigation_id", "unknown-investigation")
+
+    proposal = propose_action(
+        request=state.get("request", ""),
+        evidence=evidence,
+        resolution=state.get(
+            "final_resolution",
+            "",
+        ),
+    )
+
+    if proposal.should_act and proposal.action:
+        record_audit_event(
+            investigation_id=investigation_id,
+            event_type="ACTION_PROPOSED",
+            actor="action_proposer",
+            details={
+                "action": proposal.action.model_dump(),
+                "explanation": proposal.explanation,
+            },
+        )
+        return {"proposed_action": proposal.action}
+
+    return {"proposed_action": None}
+
+
+def policy_gate_node(
+    state: InvestigationState,
+) -> dict[str, Any]:
+    """Graph Node: Applies deterministic Python policy rules to evaluate the proposed action."""
+    action = state.get("proposed_action")
+    investigation_id = state.get("investigation_id", "unknown-investigation")
+
+    if action is None:
+        return {
+            "approval_required": False,
+            "approval_status": "not_required",
+        }
+
+    decision = evaluate_action_policy(action)
+
+    record_audit_event(
+        investigation_id=investigation_id,
+        event_type="POLICY_CHECKED",
+        actor="policy_engine",
+        details=decision.model_dump(),
+    )
+
+    if not decision.allowed:
+        return {
+            "approval_required": False,
+            "approval_status": "blocked",
+        }
+
+    if decision.approval_required:
+        record_audit_event(
+            investigation_id=investigation_id,
+            event_type="APPROVAL_REQUESTED",
+            actor="policy_engine",
+            details={
+                "reason": decision.reason,
+                "action": action.model_dump(),
+            },
+        )
+        return {
+            "approval_required": True,
+            "approval_status": "pending",
+        }
+
+    return {
+        "approval_required": False,
+        "approval_status": "not_required",
+    }
+
+
+def approval_node(
+    state: InvestigationState,
+) -> dict[str, Any]:
+    """Graph Node: Interrupts execution to request human approval via LangGraph interrupt."""
+    action = state.get("proposed_action")
+    investigation_id = state.get("investigation_id", "unknown-investigation")
+
+    if action is None:
+        return {
+            "approval_status": "not_required"
+        }
+
+    decision = interrupt(
+        {
+            "type": "human_approval_required",
+            "action": action.model_dump(),
+            "message": "This action requires human approval.",
+        }
+    )
+
+    approved = bool(decision.get("approved", False))
+    approver = decision.get("approved_by", "human_reviewer")
+
+    event_type = "ACTION_APPROVED" if approved else "ACTION_REJECTED"
+    record_audit_event(
+        investigation_id=investigation_id,
+        event_type=event_type,
+        actor=approver,
+        details={
+            "approved": approved,
+            "action": action.model_dump(),
+            "feedback": decision.get("feedback", ""),
+        },
+    )
+
+    return {
+        "approval_status": (
+            "approved"
+            if approved
+            else "rejected"
+        )
+    }
+
+
+def executor_node(
+    state: InvestigationState,
+) -> dict[str, Any]:
+    """Graph Node: Executes authorized business actions with defense-in-depth validation."""
+    action = state.get("proposed_action")
+    investigation_id = state.get("investigation_id", "unknown-investigation")
+
+    if action is None:
+        return {
+            "action_result": {
+                "success": False,
+                "error": "No action supplied.",
+            }
+        }
+
+    # Defense in depth: Verify authorization before executing financial mutations
+    if state.get("approval_required"):
+        if state.get("approval_status") != "approved":
+            record_audit_event(
+                investigation_id=investigation_id,
+                event_type="ACTION_FAILED",
+                actor="executor",
+                details="Attempted execution without required human approval.",
+            )
+            return {
+                "action_result": {
+                    "success": False,
+                    "error": "Required human approval missing or rejected.",
+                }
+            }
+
+    try:
+        result = execute_action(
+            action=action,
+            investigation_id=investigation_id,
+        )
+        return {"action_result": result}
+    except Exception as exc:
+        record_audit_event(
+            investigation_id=investigation_id,
+            event_type="ACTION_FAILED",
+            actor="executor",
+            details={"error": str(exc)},
+        )
+        return {
+            "action_result": {
+                "success": False,
+                "error": str(exc),
+            }
+        }
+
+
+def route_after_policy(
+    state: InvestigationState,
+) -> str:
+    """Route after policy gate: approval, executor, or terminal memory writer."""
+    if state.get("proposed_action") is None:
+        return "memory_writer"
+
+    status = state.get("approval_status")
+    if status == "blocked":
+        return "memory_writer"
+
+    if state.get("approval_required", False):
+        return "approval"
+
+    return "executor"
+
+
+def route_after_approval(
+    state: InvestigationState,
+) -> str:
+    """Route after approval: executor if approved, otherwise memory writer."""
+    if state.get("approval_status") == "approved":
+        return "executor"
+
+    return "memory_writer"
+
+
 # ============================================================================
 # StateGraph Assembly & Compilation
 # ============================================================================
@@ -704,6 +916,10 @@ builder.add_node("api", api_specialist_node)
 builder.add_node("sql", sql_specialist_node)
 builder.add_node("rag", rag_specialist_node)
 builder.add_node("resolution", resolution_node)
+builder.add_node("action_proposal", action_proposal_node)
+builder.add_node("policy_gate", policy_gate_node)
+builder.add_node("approval", approval_node)
+builder.add_node("executor", executor_node)
 builder.add_node("memory_writer", memory_writer_node)
 
 # Entry Point: Initialize pipeline through memory loader then planner
@@ -718,17 +934,33 @@ STEP_ROUTING = {
     "resolution": "resolution",
 }
 
-# Dynamic conditional edges:
-# After planner or any specialist finishes, route_next_step evaluates if more steps
-# remain or if we should proceed to resolution synthesis.
+# Dynamic conditional edges between specialists:
 builder.add_conditional_edges("planner", route_next_step, STEP_ROUTING)
 builder.add_conditional_edges("api", route_next_step, STEP_ROUTING)
 builder.add_conditional_edges("sql", route_next_step, STEP_ROUTING)
 builder.add_conditional_edges("rag", route_next_step, STEP_ROUTING)
 
-# Terminal flow:
-# resolution -> memory_writer (saves final resolution into DB) -> END
-builder.add_edge("resolution", "memory_writer")
+# Resolution -> Action Proposer -> Policy Gate
+builder.add_edge("resolution", "action_proposal")
+builder.add_edge("action_proposal", "policy_gate")
+
+# Policy Gate dynamic branch:
+POLICY_ROUTING = {
+    "approval": "approval",
+    "executor": "executor",
+    "memory_writer": "memory_writer",
+}
+builder.add_conditional_edges("policy_gate", route_after_policy, POLICY_ROUTING)
+
+# Approval dynamic branch:
+APPROVAL_ROUTING = {
+    "executor": "executor",
+    "memory_writer": "memory_writer",
+}
+builder.add_conditional_edges("approval", route_after_approval, APPROVAL_ROUTING)
+
+# Executor -> Memory Writer -> END
+builder.add_edge("executor", "memory_writer")
 builder.add_edge("memory_writer", END)
 
 
