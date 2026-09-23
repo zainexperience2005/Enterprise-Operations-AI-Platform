@@ -5,7 +5,8 @@ from .models import (
     Invoice,
     Payment,
     SupportTicket,
-    AuditEvent
+    AuditEvent,
+    InvestigationMemory
 )
 from .base import Base
 from .session import SessionLocal, engine, readonly_engine
@@ -18,6 +19,7 @@ __all__ = [
     "Payment",
     "SupportTicket",
     "AuditEvent",
+    "InvestigationMemory",
     "SessionLocal",
     "engine",
     "readonly_engine",

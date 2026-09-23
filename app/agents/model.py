@@ -12,3 +12,4 @@ model = ChatOpenAI(
 model_with_tools = model.bind_tools(
     ENTERPRISE_TOOLS
 )
+

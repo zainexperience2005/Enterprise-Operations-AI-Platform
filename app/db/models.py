@@ -274,3 +274,27 @@ class AuditEvent(Base):
         DateTime,
         default=datetime.utcnow,
     )
+
+class InvestigationMemory(Base):
+
+    __tablename__ = "investigation_memories"
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True
+    )
+
+    investigation_id: Mapped[str] = mapped_column(
+        index=True
+    )
+
+    memory_type: Mapped[str] = mapped_column(
+        index=True
+    )
+
+    content: Mapped[str] = mapped_column(
+        Text
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        default=datetime.utcnow
+    )
