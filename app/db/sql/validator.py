@@ -24,6 +24,13 @@ FORBIDDEN_EXPRESSIONS = (
     exp.Command,
 )
 
+FORBIDDEN_TABLES = {
+    "pg_shadow",
+    "pg_authid",
+    "pg_user",
+    "information_schema.user_mappings",
+}
+
 
 def validate_sql(
     query: str,
@@ -56,6 +63,12 @@ def validate_sql(
         if statement.find(forbidden_type):
             raise UnsafeSQLQueryError(
                 "Query contains a forbidden SQL operation."
+            )
+
+    for table in statement.find_all(exp.Table):
+        if table.name and table.name.lower() in FORBIDDEN_TABLES:
+            raise UnsafeSQLQueryError(
+                f"Access to forbidden system table '{table.name}' is not allowed."
             )
 
     limit = statement.args.get("limit")

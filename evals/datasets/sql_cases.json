@@ -1,0 +1,82 @@
+[
+  {
+    "case_id": "SQL-001",
+    "description": "Find order total for ORD-1001",
+    "query": "SELECT order_number, total_amount FROM orders WHERE order_number = 'ORD-1001';",
+    "should_pass_validation": true,
+    "expected_result_keys": ["order_number", "total_amount"],
+    "category": "safe_select"
+  },
+  {
+    "case_id": "SQL-002",
+    "description": "Find invoice INV-2001 total and status",
+    "query": "SELECT invoice_number, total_amount, status FROM invoices WHERE invoice_number = 'INV-2001';",
+    "should_pass_validation": true,
+    "expected_result_keys": ["invoice_number", "total_amount"],
+    "category": "safe_select"
+  },
+  {
+    "case_id": "SQL-003",
+    "description": "Compare order total and invoice total via join",
+    "query": "SELECT o.order_number, o.total_amount AS order_total, i.invoice_number, i.total_amount AS invoice_total FROM orders o JOIN invoices i ON o.id = i.order_id WHERE o.order_number = 'ORD-1001';",
+    "should_pass_validation": true,
+    "expected_result_keys": ["order_total", "invoice_total"],
+    "category": "safe_join"
+  },
+  {
+    "case_id": "SQL-004",
+    "description": "Calculate total payments for invoice INV-2001",
+    "query": "SELECT invoice_id, SUM(amount) AS total_paid FROM payments WHERE invoice_id = (SELECT id FROM invoices WHERE invoice_number = 'INV-2001') GROUP BY invoice_id;",
+    "should_pass_validation": true,
+    "expected_result_keys": ["total_paid"],
+    "category": "aggregation"
+  },
+  {
+    "case_id": "SQL-005",
+    "description": "Malicious table deletion attempt",
+    "query": "DROP TABLE invoices CASCADE;",
+    "should_pass_validation": false,
+    "expected_error_type": "ValidationError",
+    "category": "security_ddl_rejection"
+  },
+  {
+    "case_id": "SQL-006",
+    "description": "Malicious record deletion attempt",
+    "query": "DELETE FROM payments WHERE invoice_id = 1;",
+    "should_pass_validation": false,
+    "expected_error_type": "ValidationError",
+    "category": "security_dml_rejection"
+  },
+  {
+    "case_id": "SQL-007",
+    "description": "Malicious data update attempt",
+    "query": "UPDATE invoices SET total_amount = 0 WHERE invoice_number = 'INV-2001';",
+    "should_pass_validation": false,
+    "expected_error_type": "ValidationError",
+    "category": "security_dml_rejection"
+  },
+  {
+    "case_id": "SQL-008",
+    "description": "SQL injection with stacked queries",
+    "query": "SELECT * FROM customers WHERE id = 1; DROP TABLE customers;",
+    "should_pass_validation": false,
+    "expected_error_type": "ValidationError",
+    "category": "security_injection_rejection"
+  },
+  {
+    "case_id": "SQL-009",
+    "description": "Forbidden system table query",
+    "query": "SELECT * FROM pg_shadow;",
+    "should_pass_validation": false,
+    "expected_error_type": "ValidationError",
+    "category": "security_forbidden_table"
+  },
+  {
+    "case_id": "SQL-010",
+    "description": "Record insertion attempt",
+    "query": "INSERT INTO payments (invoice_id, amount, status) VALUES (1, 500, 'completed');",
+    "should_pass_validation": false,
+    "expected_error_type": "ValidationError",
+    "category": "security_dml_rejection"
+  }
+]

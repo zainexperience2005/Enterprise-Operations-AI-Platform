@@ -17,6 +17,7 @@ class Settings(BaseSettings):
 
     enterprise_api_url: str = "http://127.0.0.1:8000"
     openai_api_key: str
+    openai_model: str = "gpt-5.1"
 
     langsmith_tracing: bool = True
     langsmith_api_key: str

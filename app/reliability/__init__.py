@@ -8,6 +8,7 @@ from .errors import (
     RetryableError,
     ValidationError,
 )
+from .progress import evidence_fingerprint
 
 __all__ = [
     "CircuitBreaker",
@@ -19,4 +20,5 @@ __all__ = [
     "ValidationError",
     "AuthorizationError",
     "BudgetExceededError",
+    "evidence_fingerprint",
 ]

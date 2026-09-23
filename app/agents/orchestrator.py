@@ -107,14 +107,17 @@ from app.actions import (
 )
 from app.agents.actions_proposer import propose_action
 from app.agents.api_agent import run_api_specialist
+from app.agents.evaluator import evaluate_evidence
 from app.agents.investigation_state import InvestigationState
 from app.agents.planner.planner import create_investigation_plan
+from app.agents.planner.schemas import InvestigationPlan, PlanStep
 from app.agents.rag_agent import run_rag_specialist
 from app.agents.sql_agent import run_sql_specialist
 from app.memory.service import (
     load_memory_context,
     save_resolution_memory,
 )
+from app.reliability import evidence_fingerprint
 from app.security.audit import record_audit_event
 
 # ----------------------------------------------------------------------------
@@ -124,6 +127,11 @@ from app.security.audit import record_audit_event
 # Maximum number of specialist steps allowed before forced termination.
 # Prevents unbounded loops in cyclic routing graphs.
 MAX_INVESTIGATION_STEPS = 15
+
+# Loop Engineering: Bounded correction budgets and stagnation limits
+MAX_CORRECTION_LOOPS = 3
+MAX_SPECIALIST_CALLS = 10
+MAX_STAGNATION = 2
 
 # Deterministic model instance for synthesizing conclusive incident resolutions
 resolution_model = ChatOpenAI(
@@ -396,6 +404,12 @@ def planner_node(
         "evidence": list(state.get("evidence", [])),
         "errors": errors,
         "total_iterations": 0,
+        "correction_count": state.get("correction_count", 0),
+        "specialist_call_count": state.get("specialist_call_count", 0),
+        "stagnation_count": state.get("stagnation_count", 0),
+        "previous_evidence_fingerprints": list(state.get("previous_evidence_fingerprints", [])),
+        "last_evidence_fingerprint": state.get("last_evidence_fingerprint"),
+        "loop_status": state.get("loop_status", "in_progress"),
     }
 
 
@@ -405,38 +419,38 @@ def route_next_step(
     """Graph Conditional Router: Dynamically selects the next node to execute.
 
     Routing Decisions:
-    1. If plan is missing or empty -> route to "resolution".
-    2. If `current_step` >= number of plan steps -> route to "resolution".
-    3. If `total_iterations` >= `MAX_INVESTIGATION_STEPS` -> route to "resolution" (safety brake).
+    1. If plan is missing or empty -> route to "evidence_evaluator".
+    2. If `current_step` >= number of plan steps -> route to "evidence_evaluator".
+    3. If `total_iterations` >= `MAX_INVESTIGATION_STEPS` -> route to "evidence_evaluator" (safety brake).
     4. Otherwise, inspects `plan.steps[current_step].specialist`:
        - "api"  -> routes to "api" specialist node.
        - "sql"  -> routes to "sql" specialist node.
        - "rag"  -> routes to "rag" specialist node.
-       - other  -> routes to "resolution".
+       - other  -> routes to "evidence_evaluator".
 
     Args:
         state: Current investigation state.
 
     Returns:
-        str: Next node key ('api', 'sql', 'rag', or 'resolution').
+        str: Next node key ('api', 'sql', 'rag', or 'evidence_evaluator').
     """
     plan = state.get("plan")
     if not plan or not plan.steps:
-        return "resolution"
+        return "evidence_evaluator"
 
     current_step = state.get("current_step", 0)
     total_iterations = state.get("total_iterations", 0)
 
-    # Terminate to resolution if all steps are completed or iteration limit reached
+    # Route to evidence evaluator if all steps are completed or iteration limit reached
     if current_step >= len(plan.steps) or total_iterations >= MAX_INVESTIGATION_STEPS:
-        return "resolution"
+        return "evidence_evaluator"
 
     step = plan.steps[current_step]
 
     if step.specialist in ("sql", "api", "rag"):
         return step.specialist
 
-    return "resolution"
+    return "evidence_evaluator"
 
 
 # ============================================================================
@@ -504,6 +518,7 @@ def api_specialist_node(
         "errors": errors,
         "current_step": current_step + 1,
         "total_iterations": state.get("total_iterations", 0) + 1,
+        "specialist_call_count": state.get("specialist_call_count", 0) + 1,
     }
 
 
@@ -568,6 +583,7 @@ def sql_specialist_node(
         "errors": errors,
         "current_step": current_step + 1,
         "total_iterations": state.get("total_iterations", 0) + 1,
+        "specialist_call_count": state.get("specialist_call_count", 0) + 1,
     }
 
 
@@ -632,6 +648,110 @@ def rag_specialist_node(
         "errors": errors,
         "current_step": current_step + 1,
         "total_iterations": state.get("total_iterations", 0) + 1,
+        "specialist_call_count": state.get("specialist_call_count", 0) + 1,
+    }
+
+
+# ============================================================================
+# Graph Nodes: Loop Engineering (Evidence Evaluation & Correction)
+# ============================================================================
+
+def evidence_evaluator_node(
+    state: InvestigationState,
+) -> dict[str, Any]:
+    """Graph Node: Evaluates accumulated evidence against the original goal.
+
+    Calculates evidence fingerprint to detect stagnation across loop iterations.
+    Applies structured evaluation and bounds checks (budgets, stagnation limits).
+    """
+    evidence_list = state.get("evidence", [])
+    current_fp = evidence_fingerprint(evidence_list)
+    last_fp = state.get("last_evidence_fingerprint")
+    stagnation_count = state.get("stagnation_count", 0)
+    prev_fingerprints = list(state.get("previous_evidence_fingerprints", []))
+
+    if last_fp is not None and current_fp == last_fp:
+        stagnation_count += 1
+    else:
+        stagnation_count = 0
+
+    prev_fingerprints.append(current_fp)
+
+    formatted_evidence = _format_evidence_for_prompt(evidence_list)
+    formatted_errors = _format_errors_for_prompt(state.get("errors", []))
+
+    evaluation = evaluate_evidence(
+        request=state.get("request", ""),
+        evidence=formatted_evidence,
+        errors=formatted_errors,
+    )
+    eval_dict = evaluation.model_dump()
+
+    # Determine loop status based on deterministic policies & budgets
+    if eval_dict.get("verdict") == "sufficient":
+        loop_status = "success"
+    elif stagnation_count >= MAX_STAGNATION:
+        loop_status = "stagnated"
+    elif state.get("correction_count", 0) >= MAX_CORRECTION_LOOPS:
+        loop_status = "budget_exhausted"
+    elif state.get("specialist_call_count", 0) >= MAX_SPECIALIST_CALLS:
+        loop_status = "budget_exhausted"
+    elif eval_dict.get("recommended_specialist") in (None, "none"):
+        loop_status = "insufficient"
+    else:
+        loop_status = "correcting"
+
+    return {
+        "evaluation": eval_dict,
+        "stagnation_count": stagnation_count,
+        "last_evidence_fingerprint": current_fp,
+        "previous_evidence_fingerprints": prev_fingerprints,
+        "loop_status": loop_status,
+    }
+
+
+def route_after_evaluation(
+    state: InvestigationState,
+) -> str:
+    """Graph Conditional Router: Routes after evidence evaluation.
+
+    Routes to 'correction' if gaps exist and budget remains.
+    Otherwise routes to 'resolution'.
+    """
+    loop_status = state.get("loop_status")
+    if loop_status == "correcting":
+        return "correction"
+
+    return "resolution"
+
+
+def correction_node(
+    state: InvestigationState,
+) -> dict[str, Any]:
+    """Graph Node: Creates a targeted, single-step plan to close the identified evidence gap."""
+    evaluation = state.get("evaluation") or {}
+    specialist = evaluation.get("recommended_specialist", "api")
+    instruction = evaluation.get("recommended_instruction") or "Investigate missing evidence."
+    correction_count = state.get("correction_count", 0) + 1
+
+    step_id = len(state.get("evidence", [])) + 1
+    correction_plan = InvestigationPlan(
+        goal=state.get("request", ""),
+        steps=[
+            PlanStep(
+                step_id=step_id,
+                specialist=specialist if specialist in ("api", "sql", "rag") else "api",
+                instruction=instruction,
+                reason="Corrective step requested by evidence evaluator.",
+            )
+        ],
+    )
+
+    return {
+        "correction_count": correction_count,
+        "loop_status": "correcting",
+        "plan": correction_plan,
+        "current_step": 0,
     }
 
 
@@ -695,6 +815,26 @@ Errors / inaccessible sources during investigation:
     return {
         "final_resolution": response.content,
     }
+
+
+def route_after_resolution(
+    state: InvestigationState,
+) -> str:
+    """Graph Conditional Router: Routes after resolution synthesis.
+
+    If loop stopped due to budget exhaustion, stagnation, dependency failure,
+    or insufficient evidence, prevent financial action proposal and route
+    directly to memory_writer.
+    """
+    if state.get("loop_status") in {
+        "budget_exhausted",
+        "stagnated",
+        "dependency_failure",
+        "insufficient",
+    }:
+        return "memory_writer"
+
+    return "action_proposal"
 
 
 def action_proposal_node(
@@ -915,6 +1055,8 @@ builder.add_node("planner", planner_node)
 builder.add_node("api", api_specialist_node)
 builder.add_node("sql", sql_specialist_node)
 builder.add_node("rag", rag_specialist_node)
+builder.add_node("evidence_evaluator", evidence_evaluator_node)
+builder.add_node("correction", correction_node)
 builder.add_node("resolution", resolution_node)
 builder.add_node("action_proposal", action_proposal_node)
 builder.add_node("policy_gate", policy_gate_node)
@@ -926,22 +1068,34 @@ builder.add_node("memory_writer", memory_writer_node)
 builder.add_edge(START, "memory_loader")
 builder.add_edge("memory_loader", "planner")
 
-# Conditional routing table mapping router output to target node
+# Conditional routing table mapping specialist/step router output to target node
 STEP_ROUTING = {
     "api": "api",
     "sql": "sql",
     "rag": "rag",
-    "resolution": "resolution",
+    "evidence_evaluator": "evidence_evaluator",
 }
 
-# Dynamic conditional edges between specialists:
+# Dynamic conditional edges between specialists and correction:
 builder.add_conditional_edges("planner", route_next_step, STEP_ROUTING)
 builder.add_conditional_edges("api", route_next_step, STEP_ROUTING)
 builder.add_conditional_edges("sql", route_next_step, STEP_ROUTING)
 builder.add_conditional_edges("rag", route_next_step, STEP_ROUTING)
+builder.add_conditional_edges("correction", route_next_step, STEP_ROUTING)
 
-# Resolution -> Action Proposer -> Policy Gate
-builder.add_edge("resolution", "action_proposal")
+# Dynamic conditional edges from Evidence Evaluator (resolution vs correction loop):
+EVALUATION_ROUTING = {
+    "resolution": "resolution",
+    "correction": "correction",
+}
+builder.add_conditional_edges("evidence_evaluator", route_after_evaluation, EVALUATION_ROUTING)
+
+# Resolution conditional branch (Action Proposer vs terminal Memory Writer if halted):
+RESOLUTION_ROUTING = {
+    "action_proposal": "action_proposal",
+    "memory_writer": "memory_writer",
+}
+builder.add_conditional_edges("resolution", route_after_resolution, RESOLUTION_ROUTING)
 builder.add_edge("action_proposal", "policy_gate")
 
 # Policy Gate dynamic branch:
@@ -990,7 +1144,7 @@ investigation_graph = create_investigation_graph()
 def run_investigation(
     request: str,
     investigation_id: str | None = None,
-    recursion_limit: int = 25,
+    recursion_limit: int = 50,
 ) -> dict[str, Any]:
     """Execute an end-to-end investigation workflow for an operational incident.
 

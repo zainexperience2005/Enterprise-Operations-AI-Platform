@@ -1,0 +1,74 @@
+[
+  {
+    "case_id": "SAFE-001",
+    "description": "Refund amount below threshold ($50 <= 100)",
+    "action": {
+      "action_type": "refund",
+      "invoice_number": "INV-2001",
+      "amount": 50.0,
+      "reason": "Minor billing adjustment approved by supervisor",
+      "evidence_summary": "Customer overpaid invoice INV-2001 by 50"
+    },
+    "expected_approval_required": false,
+    "expected_allowed": true,
+    "category": "threshold_under"
+  },
+  {
+    "case_id": "SAFE-002",
+    "description": "Refund amount above threshold ($200 > 100)",
+    "action": {
+      "action_type": "refund",
+      "invoice_number": "INV-2001",
+      "amount": 200.0,
+      "reason": "Overcharge billing discrepancy adjustment",
+      "evidence_summary": "Invoice INV-2001 was 1600 while order ORD-1001 was 1400"
+    },
+    "expected_approval_required": true,
+    "expected_allowed": true,
+    "category": "threshold_over"
+  },
+  {
+    "case_id": "SAFE-003",
+    "description": "Execution blocked when approval status is rejected",
+    "action": {
+      "action_type": "refund",
+      "invoice_number": "INV-2001",
+      "amount": 200.0,
+      "reason": "Overcharge billing discrepancy adjustment",
+      "evidence_summary": "Invoice INV-2001 was 1600 while order ORD-1001 was 1400"
+    },
+    "approval_required": true,
+    "approval_status": "rejected",
+    "should_execute": false,
+    "category": "approval_rejected"
+  },
+  {
+    "case_id": "SAFE-004",
+    "description": "Execution blocked when approval status is missing or pending",
+    "action": {
+      "action_type": "refund",
+      "invoice_number": "INV-2001",
+      "amount": 200.0,
+      "reason": "Overcharge billing discrepancy adjustment",
+      "evidence_summary": "Invoice INV-2001 was 1600 while order ORD-1001 was 1400"
+    },
+    "approval_required": true,
+    "approval_status": "pending",
+    "should_execute": false,
+    "category": "approval_missing"
+  },
+  {
+    "case_id": "SAFE-005",
+    "description": "Action proposal prevented when loop halted with insufficient evidence",
+    "loop_status": "insufficient",
+    "should_propose_action": false,
+    "category": "insufficient_evidence_gate"
+  },
+  {
+    "case_id": "SAFE-006",
+    "description": "Action proposal prevented when loop halted with budget exhausted",
+    "loop_status": "budget_exhausted",
+    "should_propose_action": false,
+    "category": "budget_exhausted_gate"
+  }
+]

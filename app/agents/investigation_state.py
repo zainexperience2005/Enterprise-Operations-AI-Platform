@@ -1,5 +1,6 @@
-from app.actions import ProposedAction
 from typing import Any, TypedDict
+
+from app.actions import ProposedAction
 
 
 class InvestigationState(TypedDict, total=False):
@@ -30,3 +31,12 @@ class InvestigationState(TypedDict, total=False):
     approval_status: str | None
 
     action_result: dict[str, Any] | None
+
+    # Loop Engineering
+    evaluation: dict[str, Any] | None
+    correction_count: int
+    specialist_call_count: int
+    previous_evidence_fingerprints: list[str]
+    stagnation_count: int
+    last_evidence_fingerprint: str | None
+    loop_status: str | None

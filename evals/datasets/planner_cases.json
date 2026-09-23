@@ -1,0 +1,72 @@
+[
+  {
+    "case_id": "PLAN-001",
+    "input": "Investigate incorrect charge for ticket TICK-4001.",
+    "required_specialists": ["api", "sql", "rag"],
+    "forbidden_specialists": [],
+    "category": "multi_system_discrepancy"
+  },
+  {
+    "case_id": "PLAN-002",
+    "input": "Find customer CUST-001 contact email and status.",
+    "required_specialists": ["api"],
+    "forbidden_specialists": ["sql"],
+    "category": "entity_lookup"
+  },
+  {
+    "case_id": "PLAN-003",
+    "input": "When does a customer refund require human supervisor approval according to policy?",
+    "required_specialists": ["rag"],
+    "forbidden_specialists": ["sql"],
+    "category": "policy_inquiry"
+  },
+  {
+    "case_id": "PLAN-004",
+    "input": "Calculate total payments recorded across all invoices for customer 100 in the database.",
+    "required_specialists": ["sql"],
+    "forbidden_specialists": [],
+    "category": "relational_aggregation"
+  },
+  {
+    "case_id": "PLAN-005",
+    "input": "Retrieve support ticket details and audit history for TICK-4001.",
+    "required_specialists": ["api"],
+    "forbidden_specialists": ["rag"],
+    "category": "ticket_lookup"
+  },
+  {
+    "case_id": "PLAN-006",
+    "input": "What is the standard procedure when an invoice amount exceeds the approved order total?",
+    "required_specialists": ["rag"],
+    "forbidden_specialists": ["sql"],
+    "category": "sop_inquiry"
+  },
+  {
+    "case_id": "PLAN-007",
+    "input": "Investigate whether customer CUST-001 was overbilled on invoice INV-2001 and check refund thresholds.",
+    "required_specialists": ["sql", "rag"],
+    "forbidden_specialists": [],
+    "category": "billing_and_policy"
+  },
+  {
+    "case_id": "PLAN-008",
+    "input": "Look up invoice INV-2001 and order ORD-1001 via enterprise APIs.",
+    "required_specialists": ["api"],
+    "forbidden_specialists": [],
+    "category": "api_lookup"
+  },
+  {
+    "case_id": "PLAN-009",
+    "input": "Find discrepancy between invoice line items sum and invoice total in the database.",
+    "required_specialists": ["sql"],
+    "forbidden_specialists": ["rag"],
+    "category": "numeric_validation"
+  },
+  {
+    "case_id": "PLAN-010",
+    "input": "How many annual vacation days do engineers receive?",
+    "required_specialists": ["rag"],
+    "forbidden_specialists": ["sql"],
+    "category": "out_of_scope_policy"
+  }
+]

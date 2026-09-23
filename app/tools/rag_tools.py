@@ -1,8 +1,6 @@
 from langchain_core.tools import tool
 
-from app.rag.retriever import (
-    retrieve_policy_documents,
-)
+from app.rag.crag.graph import run_crag
 from app.tools.schemas import PolicySearchInput
 
 
@@ -16,13 +14,19 @@ def search_enterprise_knowledge(
     Use this tool when an investigation requires policy,
     eligibility, approval or procedural evidence.
     """
+    result = run_crag(query)
 
-    results = retrieve_policy_documents(
-        query=query
-    )
+    if result.get("status") == "insufficient":
+        return {
+            "status": "insufficient",
+            "query": query,
+            "evidence": [],
+        }
 
     return {
-        "success": True,
+        "status": "success",
         "query": query,
-        "results": results,
+        "search_query": result.get("current_query", query),
+        "rewrite_count": result.get("rewrite_count", 0),
+        "evidence": result.get("relevant_documents", []),
     }
